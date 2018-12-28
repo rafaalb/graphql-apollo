@@ -3,6 +3,7 @@ node_modules/
 *.log
 haters/
 .next/
+finished-application/
 .build/
 layout.md
 variables.env
