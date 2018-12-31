@@ -24,7 +24,7 @@ const CREATE_ITEM_MUTATION = gql`
       id
     }
   }
-`; // we use $ to pass the parameter thought the function
+`; // we use $ to pass the parameter throught the function
 
 
 export default class createItem extends Component {

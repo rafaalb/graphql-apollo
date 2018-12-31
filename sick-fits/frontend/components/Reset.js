@@ -1,8 +1,10 @@
 import React, { Component } from 'react'
 import { Mutation } from 'react-apollo'
 import Form  from './styles/Form';
+import PropTypes from 'prop-types';
 import Error from './ErrorMessage';
 import gql from 'graphql-tag';
+import { CURRENT_USER_QUERY } from './User';
 
 const RESET_MUTATION = gql`
   mutation RESET_MUTATION(
@@ -22,6 +24,9 @@ const RESET_MUTATION = gql`
 `;
 
 class Reset extends Component {
+  static propTypes = {
+    resetToken: PropTypes.string.isRequired
+  }
   state = {
     password: '',
     confirmPassword: ''
@@ -44,6 +49,9 @@ class Reset extends Component {
           ...this.state,
           resetToken: this.props.resetToken
         }}
+        refetchQueries={[
+          { query: CURRENT_USER_QUERY }
+        ]}
       >
         {(resetPassword, { error, loading, called }) => (
           <Form onSubmit={(ev) => this.onSubmit(ev, resetPassword)}>

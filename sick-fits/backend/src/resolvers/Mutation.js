@@ -1,14 +1,23 @@
 const bcrypt = require('bcryptjs');
 const jwt =  require('jsonwebtoken');
+const { transport, makeANiceEmail } = require('../mail');
 const { randomBytes } = require('crypto');
+const { hasPermission } = require('../utils');
 const { promisify } = require('util');
 
 const Mutation = {
     async createItem(parent, args, ctx, info) {
-      // todo: check if they are logged in
+      if (!ctx.request.userId) {
+        throw new Error('You must be logged in to do that');
+      }
       const item = await ctx.db.mutation.createItem({
         data: {
-          ...args
+          ...args,
+          user:  { // this binds a relation with item and user
+            connect: {
+              id: ctx.request.userId
+            }
+          }
         }
       }, info);
 
@@ -87,6 +96,16 @@ const Mutation = {
         where: { email: args.email },
         data: { resetToken, resetTokenExpiry }
       });
+      console.log(response);
+      // const mailRes = await transport.sendMail({
+      //   from: 'wes@wesbos.com',
+      //   to: user.email,
+      //   subject: 'Your Password Reset Token',
+      //   html: makeANiceEmail(`Your Password Reset Token is here!
+      //   \n\n
+      //   <a href="${process.env
+      //     .FRONTEND_URL}/reset?resetToken=${resetToken}">Click Here to Reset</a>`),
+      // });
       return { message: 'Token sent' };
     },
     async resetPassword(parent, args, ctx, info) {
@@ -125,6 +144,21 @@ const Mutation = {
       });
       // 8. returns the new user
       return updatedUser;
+    },
+    async updatePermissions(parent, args, ctx, info) {
+      // check if user has permissions to update
+      if (!ctx.request.userId) {
+        throw new Error('You must be logged in');
+      }
+      hasPermission(ctx.request.user, ['ADMIN', 'PERMISSIONUPDATE']);
+      console.log(args)
+      const user = await ctx.db.mutation.updateUser({
+        where: { id: args.userId },
+        data: {
+          permissions: { set: args.permissions }
+        }
+      }, info);
+      return user;
     }
 };
 
