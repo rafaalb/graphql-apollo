@@ -4,6 +4,7 @@ const { transport, makeANiceEmail } = require('../mail');
 const { randomBytes } = require('crypto');
 const { hasPermission } = require('../utils');
 const { promisify } = require('util');
+const stripe = require('../stripe');
 
 const Mutation = {
     async createItem(parent, args, ctx, info) {
@@ -42,11 +43,16 @@ const Mutation = {
     async deleteItem(parent, args, ctx, info) {
       const where = { id: args.id };
       const item = await ctx.db.query.item({ where }, `{ id
-      title}`);
-
-      return ctx.db.mutation.deleteItem({
-        where,
-      }, info);
+      title user { id } }`);
+      const ownsItem = item.user.id === ctx.request.userId;
+      const hasPermissions = ctx.request.user.permissions
+        .some(permission => ['ADMIN', 'ITEMDELETE'].includes(permission))
+      if (ownsItem || hasPermissions) {
+        return ctx.db.mutation.deleteItem({
+          where,
+        }, info);
+      }
+      throw new Error(`You don't have permissions to do that!`)
     },
     async signup(parent, args, ctx, info) {
       args.email = args.email.toLowerCase();
@@ -151,7 +157,6 @@ const Mutation = {
         throw new Error('You must be logged in');
       }
       hasPermission(ctx.request.user, ['ADMIN', 'PERMISSIONUPDATE']);
-      console.log(args)
       const user = await ctx.db.mutation.updateUser({
         where: { id: args.userId },
         data: {
@@ -159,6 +164,114 @@ const Mutation = {
         }
       }, info);
       return user;
+    },
+    async addToCart(parent, args, ctx, info) {
+      const { userId } = ctx.request;
+      if (!ctx.request.userId) {
+        throw new Error('You must be logged in');
+      }
+      const [existingCartItem] = await ctx.db.query.cartItems({
+        where: {
+          user: { id: userId },
+          item: { id: args.id }
+        }
+      })
+
+      if (existingCartItem) {
+        return ctx.db.mutation.updateCartItem({
+          where: { id: existingCartItem.id },
+          data: { quantity: existingCartItem.quantity + 1 }
+        })
+      }
+
+      return ctx.db.mutation.createCartItem({
+        data: {
+          user: {
+            connect: { id: userId },
+
+          },
+          item: { 
+            connect: { id: args.id }
+          }
+        }
+      })
+    },
+    async removeFromCart(parent, args, ctx, info) {
+      const cartItem = await ctx.db.query.cartItem({
+        where: { id: args.id }
+      }, `{ id, user { id } }`)
+      if (!cartItem) {
+        throw new Error('No CartItem found')
+      }
+      if (cartItem.user.id !== ctx.request.userId) {
+        throw new Error('Cheating ahh')
+      }
+      
+      return ctx.db.mutation.deleteCartItem({
+        where: {
+          id: args.id
+        }
+      }, info)
+    },
+    async createOrder(parent, args, ctx, info) {
+      const { userId } = ctx.request;
+      if (!userId) throw new Error('You must be logged in')
+
+      const user = await ctx.db.query.user({
+        where: { id: userId }
+      }, `
+        {
+          id
+          name
+          email
+          cart {
+            id
+            quantity
+            item {
+              title
+              price
+              id
+              description
+              image
+              largeImage
+            }
+          }
+        }`
+      );
+
+      const amount = user.cart.reduce((tally, cartItem) => tally + (cartItem.quantity * cartItem.item.price), 0)
+      const charge = await stripe.charges.create({
+        amount,
+        currency: 'USD',
+        source: args.token,
+      });
+
+      const orderItems = user.cart.map(cartItem => {
+        const orderItem = {
+          ...cartItem.item,
+          quantity: cartItem.quantity,
+          user: { connect: { id: userId } }
+        }
+        delete orderItem.id;
+        return orderItem;
+      });
+
+      const order = await ctx.db.mutation.createOrder({
+        data: {
+          total: charge.amount,
+          charge: charge.id,
+          items: { create: orderItems },
+          user: { connect: { id: userId }}
+        }
+      })
+
+      const cartItemIds = user.cart.map(cartItem => cartItem.id)
+      await ctx.db.mutation.deleteManyCartItems({ where: {
+        id_in: cartItemIds
+      }})
+
+      return order;
+
     }
 };
 

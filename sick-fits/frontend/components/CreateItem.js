@@ -45,8 +45,8 @@ export default class createItem extends Component {
     const { files } = e.target;
     const data = new FormData();
     data.append('file', files[0]);
-    data.append('upload_preset', 'sickfits');
-    const res = await fetch('https://api.cloudinary.com/v1_1/dcxq7vr6y/image/upload/', {
+    data.append('upload_preset', 'sick-fits');
+    const res = await fetch('https://api.cloudinary.com/v1_1/ddq1kn4hy/image/upload/', {
       method: 'POST',
       body: data
     });
